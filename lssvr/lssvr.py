@@ -18,7 +18,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
             self.supportVectors      = x_train[idxs,:]
             self.supportVectorLabels = y_train[idxs,:]
 
-        K = self.kernel_func(kernel, x_train, x_train, sigma)
+        K = self.kernel_func(kernel, self.supportVectors, self.supportVectors, sigma)
 
         idx = np.diag_indices_from(K)
         OMEGA = K
@@ -29,11 +29,11 @@ class LSSVR(BaseEstimator, RegressorMixin):
         D = np.zeros(size)
 
         D[1:,1:] = OMEGA
-        D[0, 1:] = np.ones(y_train.shape[0])
-        D[1:,0 ] = np.ones(y_train.shape[0])
+        D[0, 1:] = np.ones(self.supportVectorLabels.shape[0])
+        D[1:,0 ] = np.ones(self.supportVectorLabels.shape[0])
 
-        t = np.zeros((y_train.shape[0]+1, ))
-        t[1:] = y_train
+        t = np.zeros((self.supportVectorLabels.shape[0]+1, ))
+        t[1:] = self.supportVectorLabels
 
         z = np.linalg.lstsq(D, t, rcond=-1)
 
