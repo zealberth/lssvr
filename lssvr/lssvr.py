@@ -10,13 +10,13 @@ class LSSVR(BaseEstimator, RegressorMixin):
         self.supportVectors      = supportVectors
         self.supportVectorLabels = supportVectorLabels
 
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None):
-        if idxs == None:
+    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=np.array([])):
+        if idxs.size == 0:
             self.supportVectors      = x_train
             self.supportVectorLabels = y_train
-        else
+        else:
             self.supportVectors      = x_train[idxs,:]
-            self.supportVectorLabels = y_train[idxs,:]
+            self.supportVectorLabels = y_train[idxs]
 
         K = self.kernel_func(kernel, self.supportVectors, self.supportVectors, sigma)
 
@@ -39,11 +39,13 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         self.bias   = z[0][0]
         self.alphas = z[0][1:]
+        self.sigma = sigma
+        self.kernel = kernel
 
         return self
 
-    def predict(self, x_test, kernel='linear', sigma=0.05):
-        K = self.kernel_func(kernel, x_test, self.supportVectors)
+    def predict(self, x_test):
+        K = self.kernel_func(self.kernel, x_test, self.supportVectors)
 
         return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
 

@@ -12,10 +12,8 @@ X_train, X_test, y_train, y_test = train_test_split(boston.data, boston.target, 
 
 model = LSSVR()
 
-sigma = 2**-3;
+model.fit(X_train, y_train, kernel='linear')
 
-model.fit(X_train, y_train, kernel='linear', sigma=sigma)
-
-y_hat = model.predict(X_test, kernel='linear', sigma=sigma)
+y_hat = model.predict(X_test)
 
 print(mean_squared_error(y_test, y_hat))
