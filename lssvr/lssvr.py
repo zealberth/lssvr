@@ -10,14 +10,19 @@ class LSSVR(BaseEstimator, RegressorMixin):
         self.supportVectors      = supportVectors
         self.supportVectorLabels = supportVectorLabels
 
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05):
-        # random select of reference points for inputs and outputs
-        self.supportVectors      = x_train
-        self.supportVectorLabels = y_train
+    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None):
+        if idxs == None:
+            self.supportVectors      = x_train
+            self.supportVectorLabels = y_train
+        else
+            self.supportVectors      = x_train[idxs,:]
+            self.supportVectorLabels = y_train[idxs,:]
 
         K = self.kernel_func(kernel, x_train, x_train, sigma)
 
-        OMEGA = K + ((1/gamma + np.eye(K.shape[1])))
+        idx = np.diag_indices_from(K)
+        OMEGA = K
+        OMEGA[idx] += 1/gamma
 
         size = (OMEGA.shape[0]+1, OMEGA.shape[1]+1)
 
