@@ -33,6 +33,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         D[1:,0 ] = np.ones(self.supportVectorLabels.shape[0])
 
         t = np.zeros((self.supportVectorLabels.shape[0]+1, ))
+        
         t[1:] = self.supportVectorLabels
 
         z = np.linalg.lstsq(D, t, rcond=-1)
@@ -53,5 +54,5 @@ class LSSVR(BaseEstimator, RegressorMixin):
         if kernel == 'linear':
             k = np.dot(u, v.T)
         if kernel == 'rbf':
-            k = sklearn.metrics.pairwise.rbf_kernel(u, v, gamma=1/(sigma**2))
+            k = sklearn.metrics.pairwise.rbf_kernel(u, v, gamma=sigma)
         return k
