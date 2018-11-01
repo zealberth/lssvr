@@ -18,7 +18,7 @@ model = LSSVR()
 
 model.fit(X_train, y_train, kernel='rbf', sigma=2**-4)
 y_hat = model.predict(X_test)
-print(mean_squared_error(y_test, y_hat), i)
+print(mean_squared_error(y_test, y_hat))
 
 plt.plot(X, y, '.r', alpha=0.5)
 plt.plot(X, model.predict(X), '-b')
