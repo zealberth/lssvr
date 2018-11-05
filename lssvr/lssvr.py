@@ -11,22 +11,31 @@ from sklearn.base import BaseEstimator, RegressorMixin
 
 
 class LSSVR(BaseEstimator, RegressorMixin):
-    def __init__(self, supportVectors=None,supportVectorLabels=None):
-        self.supportVectors      = supportVectors
-        self.supportVectorLabels = supportVectorLabels
+    def __init__(self, gamma=None, kernel=None, sigma=None):
+        self.supportVectors      = None
+        self.supportVectorLabels = None
+        self.gamma = gamma
+        self.sigma = sigma
+        self.kernel= kernel
+        self.idxs=None
 
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None):
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
+
+    def fit(self, x_train, y_train):
         # print(idxs.shape, idxs)
-        if type(idxs) == type(None):
+        if type(self.idxs) == type(None):
             idxs=np.ones(x_train.shape[0], dtype=bool)
 
         self.supportVectors      = x_train[idxs, :]
         self.supportVectorLabels = y_train[idxs]
 
-        K = self.kernel_func(kernel, x_train, self.supportVectors, sigma)
+        K = self.kernel_func(self.kernel, x_train, self.supportVectors, self.sigma)
 
         OMEGA = K
-        OMEGA[idxs, np.arange(OMEGA.shape[1])] += 1/gamma
+        OMEGA[idxs, np.arange(OMEGA.shape[1])] += 1/self.gamma
 
         D = np.zeros(np.array(OMEGA.shape) + 1)
 
@@ -44,15 +53,14 @@ class LSSVR(BaseEstimator, RegressorMixin):
         self.bias   = z[0]
         self.alphas = z[1:]
         self.alphas = self.alphas[idxs]
-        self.sigma = sigma
-        self.kernel = kernel
 
         return self
 
     def predict(self, x_test):
         K = self.kernel_func(self.kernel, x_test, self.supportVectors)
 
-        return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
+        return (K @ self.alphas) + self.bias
+        # return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
 
     def kernel_func(self, kernel, u, v, sigma = 0.05):
         if kernel == 'linear':
@@ -61,11 +69,16 @@ class LSSVR(BaseEstimator, RegressorMixin):
             k = sklearn.metrics.pairwise.rbf_kernel(u, v, gamma=sigma)
         return k
 
+    def score(self, X, y, sample_weight=None):
+        return RegressorMixin.score(self, X, y, sample_weight)
+
 class RegENN_LSSVR(LSSVR):
     def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=2, n_neighbors=9):
         idxs = self.RegENN(x_train, y_train, alpha, n_neighbors)
 
-        super().fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(RegENN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+
+        return self
 
     def RegENN(self,X, y, alpha, n_neighbors):
         n = len(X)
@@ -90,7 +103,9 @@ class RegCNN_LSSVR(LSSVR):
     def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=2, n_neighbors=9):
         idxs = self.RegCNN(x_train, y_train, alpha, n_neighbors)
 
-        super().fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(RegCNN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+
+        return self
 
     def RegCNN(self, X, y, alpha, n_neighbors):
         n = len(X)
@@ -129,7 +144,9 @@ class DiscENN_LSSVR(LSSVR):
     def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, n_neighbors=9):
         idxs = self.DiscENN(x_train, y_train, n_neighbors)
 
-        super().fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(DiscENN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+
+        return self
 
     def WilsonENN(self, X, y, n_neighbors):
         n = len(X)
@@ -144,16 +161,22 @@ class DiscENN_LSSVR(LSSVR):
                 S[i] = False
         return S
 
-    def DiscENN(self, X, y, n_neighbors):
+    def DiscENN(self, X, y, n_neighbors=None):
         mdlp = MDLP()
         conv_y = mdlp.fit_transform(y.reshape(-1,1), y)
+
+        if n_neighbors is None or not np.isscalar(n_neighbors):
+            n_neighbors = round(np.log10(len(X)) * 5).astype('int')
+
         return self.WilsonENN(X, conv_y, n_neighbors=n_neighbors)
 
 class MI_LSSVR(LSSVR):
     def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=0.05, n_neighbors=6):
         idxs = self.MutualInformationSelection(x_train, y_train, alpha=alpha, n_neighbors=n_neighbors)
 
-        super().fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(MI_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+
+        return self
 
     def MutualInformationSelection(self, X, y, alpha, n_neighbors):
         n = len(X)
@@ -178,7 +201,9 @@ class AM_LSSVR(LSSVR):
     def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, cutoff=(.2, .32), k=None):
         idxs = self.KSSelection(x_train, y_train, cutoff=cutoff, k=k)
         
-        super().fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(AM_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+
+        return self
 
     def KSSelection(self, X, y, cutoff, k):
         n = len(X)
