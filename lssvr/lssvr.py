@@ -1,23 +1,29 @@
 """Least Squares Support Vector Regression."""
 import numpy as np
-import sklearn
+from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.metrics.pairwise import rbf_kernel
+from sklearn.gaussian_process import kernels
 from sklearn.neighbors import NearestNeighbors, KNeighborsRegressor
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import MinMaxScaler
-from scipy import stats
+from scipy import stats, optimize
+from scipy.signal import find_peaks
+from scipy.spatial.distance import cdist
+from scipy.sparse import linalg
 from mdlp import MDLP
-
-from sklearn.base import BaseEstimator, RegressorMixin
 
 
 class LSSVR(BaseEstimator, RegressorMixin):
-    def __init__(self, gamma=None, kernel=None, sigma=None):
+    def __init__(self, C=None, kernel=None, gamma=None):
         self.supportVectors      = None
         self.supportVectorLabels = None
+        self.C = C
         self.gamma = gamma
-        self.sigma = sigma
         self.kernel= kernel
-        self.idxs=None
+        self.idxs  = None
+        self.K = None
+        self.bias = None 
+        self.alphas = None
 
     def set_params(self, **parameters):
         for parameter, value in parameters.items():
@@ -25,59 +31,82 @@ class LSSVR(BaseEstimator, RegressorMixin):
         return self
 
     def fit(self, x_train, y_train):
-        # print(idxs.shape, idxs)
         if type(self.idxs) == type(None):
-            idxs=np.ones(x_train.shape[0], dtype=bool)
+            self.idxs=np.ones(x_train.shape[0], dtype=bool)
 
-        self.supportVectors      = x_train[idxs, :]
-        self.supportVectorLabels = y_train[idxs]
+        self.supportVectors      = x_train[self.idxs, :]
+        self.supportVectorLabels = y_train[self.idxs]
 
-        K = self.kernel_func(self.kernel, x_train, self.supportVectors, self.sigma)
+        K = self.kernel_func(self.kernel, x_train, self.supportVectors, self.gamma)
 
+        self.K = K
         OMEGA = K
-        OMEGA[idxs, np.arange(OMEGA.shape[1])] += 1/self.gamma
+        OMEGA[self.idxs, np.arange(OMEGA.shape[1])] += 1/self.C
 
         D = np.zeros(np.array(OMEGA.shape) + 1)
 
         D[1:,1:] = OMEGA
-        D[0, 1:] = np.ones(OMEGA.shape[1])
-        D[1:,0 ] = np.ones(OMEGA.shape[0])
+        D[0, 1:] += 1
+        D[1:,0 ] += 1
 
         n = len(self.supportVectorLabels) + 1
         t = np.zeros(n)
         
         t[1:n] = self.supportVectorLabels
 
-        z = np.linalg.pinv(D).T @ t.ravel()
+        try:
+            z = linalg.lsmr(D.T, t)[0]
+        except:
+            z = np.linalg.pinv(D).T @ t.ravel()
 
         self.bias   = z[0]
         self.alphas = z[1:]
-        self.alphas = self.alphas[idxs]
+        self.alphas = self.alphas[self.idxs]
 
         return self
 
     def predict(self, x_test):
-        K = self.kernel_func(self.kernel, x_test, self.supportVectors)
+        K = self.kernel_func(self.kernel, x_test, self.supportVectors, self.gamma)
 
         return (K @ self.alphas) + self.bias
         # return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
 
-    def kernel_func(self, kernel, u, v, sigma = 0.05):
+    def kernel_func(self, kernel, u, v, gamma):
         if kernel == 'linear':
             k = np.dot(u, v.T)
         if kernel == 'rbf':
-            k = sklearn.metrics.pairwise.rbf_kernel(u, v, gamma=sigma)
+            k = rbf_kernel(u, v, gamma=gamma)
+            # temp = kernels.RBF(length_scale=(1/gamma))
+            # k = temp(u, v)
         return k
 
     def score(self, X, y, sample_weight=None):
-        return RegressorMixin.score(self, X, y, sample_weight)
+        from scipy.stats import pearsonr
+        p, _ = pearsonr(y, self.predict(X))
+        return p ** 2
+        #return RegressorMixin.score(self, X, y, sample_weight)
+
+    def norm_weights(self):
+        n = len(self.supportVectors)
+
+        A = self.alphas.reshape(-1,1) @ self.alphas.reshape(-1,1).T
+        # import pdb; pdb.set_trace()
+        W = A @ self.K[self.idxs,:]
+        return np.sqrt(np.sum(np.diag(W)))
 
 class RegENN_LSSVR(LSSVR):
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=2, n_neighbors=9):
-        idxs = self.RegENN(x_train, y_train, alpha, n_neighbors)
+    def __init__(self, C=None, kernel=None, gamma=None, alpha=None, n_neighbors=None):
+        self.alpha = alpha
+        self.n_neighbors = n_neighbors
+        LSSVR.__init__(self, C, kernel, gamma)
 
-        super(RegENN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+    def fit(self, x_train, y_train):
+        if self.n_neighbors is None or not np.isscalar(self.n_neighbors):
+            self.n_neighbors = round(np.log10(len(x_train)) * 5).astype('int')
 
+        self.idxs = self.RegENN(x_train, y_train, self.alpha, self.n_neighbors)
+
+        super(RegENN_LSSVR, self).fit(x_train, y_train)
         return self
 
     def RegENN(self,X, y, alpha, n_neighbors):
@@ -85,11 +114,16 @@ class RegENN_LSSVR(LSSVR):
         T = np.ones(n, dtype=bool)
 
         for i in range(n):
-            nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree').fit(X[T]) 
-            _, idxs = nbrs.kneighbors(np.asmatrix(X[i])) #idxs para montar o conjunto S
-
-            neigh = KNeighborsRegressor(n_neighbors=n_neighbors).fit(X[T], y[T]) 
-            y_hat = neigh.predict(np.asmatrix(X[i]))
+            if len(X[T]) < n_neighbors:
+                nbrs = NearestNeighbors(n_neighbors=len(X[T]), algorithm='ball_tree').fit(X[T])
+                _, idxs = nbrs.kneighbors(np.asmatrix(X[i])) #idxs para montar o conjunto S
+                neigh = KNeighborsRegressor(n_neighbors=len(X[T])).fit(X[T], y[T]) 
+                y_hat = neigh.predict(np.asmatrix(X[i]))
+            else:
+                nbrs = NearestNeighbors(n_neighbors=n_neighbors, algorithm='ball_tree').fit(X[T])
+                _, idxs = nbrs.kneighbors(np.asmatrix(X[i])) #idxs para montar o conjunto S
+                neigh = KNeighborsRegressor(n_neighbors=n_neighbors).fit(X[T], y[T]) 
+                y_hat = neigh.predict(np.asmatrix(X[i]))
 
             theta = alpha * np.std(y[idxs[0,1:]])
 
@@ -99,11 +133,19 @@ class RegENN_LSSVR(LSSVR):
                 T[i] = False
         return T    
     
-class RegCNN_LSSVR(LSSVR):
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=2, n_neighbors=9):
-        idxs = self.RegCNN(x_train, y_train, alpha, n_neighbors)
+class RegCNN_LSSVR(LSSVR):    
+    def __init__(self, C=None, kernel=None, gamma=None, alpha=None, n_neighbors=None):
+        self.alpha = alpha
+        self.n_neighbors = n_neighbors
+        LSSVR.__init__(self, C, kernel, gamma)
 
-        super(RegCNN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+    def fit(self, x_train, y_train):
+        if self.n_neighbors is None or not np.isscalar(self.n_neighbors):
+            self.n_neighbors = round(np.log10(len(x_train)) * 5).astype('int')
+
+        self.idxs = self.RegCNN(x_train, y_train, self.alpha, self.n_neighbors)
+
+        super(RegCNN_LSSVR, self).fit(x_train, y_train)
 
         return self
 
@@ -126,10 +168,17 @@ class RegCNN_LSSVR(LSSVR):
                 _, idxs = nbrs.kneighbors(np.asmatrix(X[i])) #idxs para montar o conjunto S
 
 
-            T[i] = False
-            neigh = KNeighborsRegressor(n_neighbors=n_neighbors).fit(X[T], y[T]) 
-            y_hat = neigh.predict(np.asmatrix(X[i]))
-            T[i] = True
+            # tratando erro de caso o fold ser muito pequeno
+            if len(X[T]) < n_neighbors:
+                T[i] = False
+                neigh = KNeighborsRegressor(n_neighbors=int(round(len(X[T])*.5))).fit(X[T], y[T]) 
+                y_hat = neigh.predict(np.asmatrix(X[i]))
+                T[i] = True
+            else:
+                T[i] = False
+                neigh = KNeighborsRegressor(n_neighbors=n_neighbors).fit(X[T], y[T]) 
+                y_hat = neigh.predict(np.asmatrix(X[i]))
+                T[i] = True
 
             theta = alpha * np.std(y[idxs.ravel()])
             
@@ -141,10 +190,18 @@ class RegCNN_LSSVR(LSSVR):
         return P
     
 class DiscENN_LSSVR(LSSVR):
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, n_neighbors=9):
-        idxs = self.DiscENN(x_train, y_train, n_neighbors)
+    def __init__(self, C=None, kernel=None, gamma=None, n_neighbors=None):
+        self.n_neighbors = n_neighbors
+        LSSVR.__init__(self, C, kernel, gamma)
 
-        super(DiscENN_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+    def fit(self, x_train, y_train):
+        if self.n_neighbors is None or not np.isscalar(self.n_neighbors):
+            self.n_neighbors = round(np.log10(len(x_train)) * 5).astype('int')
+
+        # print (self.n_neighbors)
+        self.idxs = self.DiscENN(x_train, y_train, self.n_neighbors)
+
+        super(DiscENN_LSSVR, self).fit(x_train, y_train)
 
         return self
 
@@ -161,20 +218,27 @@ class DiscENN_LSSVR(LSSVR):
                 S[i] = False
         return S
 
-    def DiscENN(self, X, y, n_neighbors=None):
+    def DiscENN(self, X, y, n_neighbors):
         mdlp = MDLP()
+        if np.min(y)<0:
+            y = y - np.min(y)
         conv_y = mdlp.fit_transform(y.reshape(-1,1), y)
-
-        if n_neighbors is None or not np.isscalar(n_neighbors):
-            n_neighbors = round(np.log10(len(X)) * 5).astype('int')
 
         return self.WilsonENN(X, conv_y, n_neighbors=n_neighbors)
 
 class MI_LSSVR(LSSVR):
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, alpha=0.05, n_neighbors=6):
-        idxs = self.MutualInformationSelection(x_train, y_train, alpha=alpha, n_neighbors=n_neighbors)
+    def __init__(self, C=None, kernel=None, gamma=None, alpha=None, n_neighbors=None):
+        self.n_neighbors = n_neighbors
+        self.alpha = alpha
+        LSSVR.__init__(self, C, kernel, gamma)
 
-        super(MI_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+    def fit(self, x_train, y_train):
+        if self.n_neighbors is None or not np.isscalar(self.n_neighbors):
+            self.n_neighbors = round(np.log10(len(x_train)) * 5).astype('int')
+
+        self.idxs = self.MutualInformationSelection(x_train, y_train, alpha=self.alpha, n_neighbors=self.n_neighbors)
+
+        super(MI_LSSVR, self).fit(x_train, y_train)
 
         return self
 
@@ -191,31 +255,45 @@ class MI_LSSVR(LSSVR):
         # dropout themselves
         neighbors = neighbors[:, 1:]
 
-        cdiff = [np.sum((mi[i] - mi[neighbors[i]]) > alpha) for i in range(n)]
+        mask_as_set = set(mask)
 
-        idx = np.array(cdiff) < n_neighbors
+        not_neighbors = [list(mask_as_set - set(neighbors[i])) for i in range(n)]
 
-        return idx
+        nn_mi = [mutual_info_regression(X[not_neighbors[i]], y[not_neighbors[i]]) for i in range(n)]
+
+        selected = np.ones(len(X), dtype=bool)
+
+        for i in range(n):
+            cdiff = np.asarray([(mi[i] - mi[k]) for k in neighbors[i]])
+            selected[i] = np.sum(cdiff > alpha) > n_neighbors
+
+        return selected
 
 class AM_LSSVR(LSSVR):
-    def fit(self, x_train, y_train, gamma=16, kernel='linear', sigma=0.05, idxs=None, cutoff=(.2, .32), k=None):
-        idxs = self.KSSelection(x_train, y_train, cutoff=cutoff, k=k)
+    def __init__(self, C=None, kernel=None, gamma=None, cut_high=None, cut_low = None, n_neighbors=None):
+        self.n_neighbors = n_neighbors
+        self.cut_high = cut_high
+        self.cut_low = cut_low
+        LSSVR.__init__(self, C, kernel, gamma)
+
+    def fit(self, x_train, y_train):
+        if self.n_neighbors is None or not np.isscalar(self.n_neighbors):
+            self.n_neighbors = round(np.log10(len(x_train)) * 5).astype('int')
+
+        self.idxs = self.KSSelection(x_train, y_train, cut_high=self.cut_high, cut_low=self.cut_low, n_neighbors=self.n_neighbors)
         
-        super(AM_LSSVR, self).fit(x_train, y_train, gamma=gamma, kernel=kernel, sigma=sigma, idxs=idxs)
+        super(AM_LSSVR, self).fit(x_train, y_train)
 
         return self
 
-    def KSSelection(self, X, y, cutoff, k):
+    def KSSelection(self, X, y, cut_high, cut_low, n_neighbors):
         n = len(X)
 
-        if k is None:
-            k = round(5 * np.log10(n))
-
-        knn = NearestNeighbors(n_neighbors=int(k + 1), algorithm='ball_tree').fit(X)
+        knn = NearestNeighbors(n_neighbors=int(n_neighbors + 1), algorithm='ball_tree').fit(X)
 
         distx, ind = knn.kneighbors(X)
 
-        knn = NearestNeighbors(n_neighbors=int(k + 1), algorithm='ball_tree').fit(y.reshape(-1,1))
+        knn = NearestNeighbors(n_neighbors=int(n_neighbors + 1), algorithm='ball_tree').fit(y.reshape(-1,1))
 
         disty, ind = knn.kneighbors(y.reshape(-1,1), return_distance=True)
 
@@ -225,10 +303,11 @@ class AM_LSSVR(LSSVR):
 
         order = np.argsort(p)
 
-        h_cutoff = round(cutoff[0] * n)
-        l_cutoff = round(cutoff[1] * n)
+        h_cutoff = int(round(cut_high * n))
+        l_cutoff = int(round(cut_low * n))
 
         idx = np.zeros((n, 1), dtype=bool)
+
         idx[order[:l_cutoff]] = True
         idx[order[-h_cutoff:]] = True
 
@@ -247,3 +326,43 @@ class AM_LSSVR(LSSVR):
         _, pval = ks_2samp(a, b)
 
         return pval
+
+class NL_LSSVR(LSSVR):
+    def __init__(self, C=None, kernel=None, gamma=None):
+        LSSVR.__init__(self, C, kernel, gamma)
+
+    def fit(self, x_train, y_train):
+        self.idxs = self.NLSelection(x_train, y_train)
+        
+        super(NL_LSSVR, self).fit(x_train, y_train)
+
+        return self
+
+    def NLSelection(self, X, y):
+        n = len(X)
+
+        # trick to sort rows
+        order = self.__class__.__order_of(X)
+
+        yl = y[order].ravel()
+
+        s = np.round(np.sqrt(np.std(yl)))
+        if s < 1:
+            s = 1
+        h_peaks, l = find_peaks(yl, distance=s)
+        l_peaks, l = find_peaks(-yl, distance=s)
+
+        idx = np.zeros(n, dtype=bool)
+
+        idx[h_peaks] = True
+        idx[l_peaks] = True
+
+        return idx
+
+    @staticmethod
+    def __order_of(X):
+
+        x_origin = np.min(X, axis=0)
+        keys = cdist(np.asmatrix(x_origin), X)
+
+        return np.argsort(keys)
