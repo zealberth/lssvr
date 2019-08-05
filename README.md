@@ -1,7 +1,7 @@
-# scikit-lssvr
+# lssvr
 
 
-`scikit-lssvr` is a Python module implementing the Least Squares Support Vector Regression
+`lssvr` is a Python module implementing the Least Squares Support Vector Regression using the scikit-learn as base.
 
 
 ## basic usage
