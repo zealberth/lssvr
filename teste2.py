@@ -14,9 +14,9 @@ y = data['output'].values
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
-model = LSSVR()
+model = LSSVR(kernel='rbf', gamma=2**-4)
 
-model.fit(X_train, y_train, kernel='rbf', sigma=2**-4)
+model.fit(X_train, y_train)
 y_hat = model.predict(X_test)
 print(mean_squared_error(y_test, y_hat))
 

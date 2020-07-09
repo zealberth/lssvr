@@ -8,7 +8,7 @@ from scipy.sparse import linalg
 
 
 class LSSVR(BaseEstimator, RegressorMixin):
-    def __init__(self, C=None, kernel=None, gamma=None):
+    def __init__(self, C=2, kernel='linear', gamma=None):
         self.supportVectors      = None
         self.supportVectorLabels = None
         self.C = C
@@ -73,20 +73,17 @@ class LSSVR(BaseEstimator, RegressorMixin):
             k = np.dot(u, v.T)
         if kernel == 'rbf':
             k = rbf_kernel(u, v, gamma=gamma)
-            # temp = kernels.RBF(length_scale=(1/gamma))
-            # k = temp(u, v)
         return k
 
     def score(self, X, y, sample_weight=None):
         from scipy.stats import pearsonr
         p, _ = pearsonr(y, self.predict(X))
         return p ** 2
-        #return RegressorMixin.score(self, X, y, sample_weight)
 
     def norm_weights(self):
         n = len(self.supportVectors)
 
         A = self.alphas.reshape(-1,1) @ self.alphas.reshape(-1,1).T
-        # import pdb; pdb.set_trace()
+
         W = A @ self.K[self.idxs,:]
         return np.sqrt(np.sum(np.diag(W)))
