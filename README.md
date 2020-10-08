@@ -1,11 +1,12 @@
 # lssvr
 
-
-`lssvr` is a Python module implementing the Least Squares Support Vector Regression using the scikit-learn as base.
+`lssvr` is a Python module implementing the [Least Squares Support Vector Regression][1] using the scikit-learn as base.
 
 
 ## basic usage
+
 Example:
+
 ```Python
 import numpy as np
 from lssvr import LSSVR
@@ -25,3 +26,17 @@ y_hat = model.predict(X_test)
 print('MSE', mean_squared_error(y_test, y_hat))
 print('R2 Score',model.score(X_test, y_test))
 ```
+
+
+## contributing
+
+this project is open for contributions. here are some of the ways for you to contribute:
+
+ - bug reports/fix
+ - features requests
+ - use-case demonstrations
+
+to make a contribution, just fork this repository, push the changes in your fork, open up an issue, and make a pull request!
+
+
+[1]: https://doi.org/10.1016/S0925-2312(01)00644-0
