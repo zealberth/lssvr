@@ -2,6 +2,15 @@
 
 `lssvr` is a Python module implementing the [Least Squares Support Vector Regression][1] using the scikit-learn as base.
 
+## instalation
+the `lssvr` package is available in [PyPI](https://pypi.org/project/lssvr/). to install, simply type the following command:
+```
+pip install lssvr
+```
+or using [Poetry](python-poetry.org/):
+```
+poetry add lssvr
+```
 
 ## basic usage
 
