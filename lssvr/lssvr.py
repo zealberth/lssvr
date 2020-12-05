@@ -45,16 +45,18 @@ class LSSVR(BaseEstimator, RegressorMixin):
         D[0, 1:] += 1
         D[1:,0 ] += 1
 
-        n = len(self.supportVectorLabels) + 1
-        t = np.zeros(n)
+        shape = np.array(self.supportVectorLabels.shape)
+        shape[0] +=1
+
+        t = np.zeros(shape)
         
-        t[1:n] = self.supportVectorLabels
+        t[1:] = self.supportVectorLabels
     
         # sometimes this function breaks
         try:
             z = linalg.lsmr(D.T, t)[0]
         except:
-            z = np.linalg.pinv(D).T @ t.ravel()
+            z = np.linalg.pinv(D).T @ t
 
         self.bias   = z[0]
         self.alphas = z[1:]
@@ -87,3 +89,4 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         W = A @ self.K[self.idxs,:]
         return np.sqrt(np.sum(np.diag(W)))
+    
