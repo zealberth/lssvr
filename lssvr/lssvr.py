@@ -77,15 +77,13 @@ class LSSVR(BaseEstimator, RegressorMixin):
             k = rbf_kernel(u, v, gamma=gamma)
         return k
 
-    def score(self, X, y, sample_weight=None):
+    def score(self, X, y):
         from scipy.stats import pearsonr
         p, _ = pearsonr(y, self.predict(X))
         return p ** 2
 
     def norm_weights(self):
-        n = len(self.supportVectors)
-
-        A = self.alphas.reshape(-1,1) @ self.alphas.reshape(-1,1).T
+        A = self.alpha_.reshape(-1,1) @ self.alpha_.reshape(-1,1).T
 
         W = A @ self.K[self.idxs,:]
         return np.sqrt(np.sum(np.diag(W)))
