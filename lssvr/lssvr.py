@@ -64,18 +64,21 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         return self
 
-    def predict(self, x_test):
-        K = self.kernel_func(self.kernel, x_test, self.supportVectors, self.gamma)
+    def kernel_func(self, u, v):
+        if self.kernel is 'linear':
+            return np.dot(u, v.T)
 
-        return (K @ self.alphas) + self.bias
-        # return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
+        elif self.kernel is 'rbf':
+            return rbf_kernel(u, v, gamma=self.gamma)
 
-    def kernel_func(self, kernel, u, v, gamma):
-        if kernel == 'linear':
-            k = np.dot(u, v.T)
-        if kernel == 'rbf':
-            k = rbf_kernel(u, v, gamma=gamma)
-        return k
+        elif callable(self.kernel):
+            if hasattr(self.kernel, 'gamma'):
+                return self.kernel(u, v, gamma=self.gamma)
+            else:
+                return self.kernel(u, v)
+        else:
+          # default to linear
+          return np.dot(u, v.T)
 
     def score(self, X, y):
         from scipy.stats import pearsonr
