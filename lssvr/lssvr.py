@@ -67,7 +67,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         if not support:
             self.support_ = np.ones(X.shape[0], dtype=bool)
         else:
-          self.support_ = support
+          self.support_ = check_array(support, ensure_2d=False, dtype='bool')
 
         self.support_vectors_ = X[self.support_, :]
         support_labels = y[self.support_]
