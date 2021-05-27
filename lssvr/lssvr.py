@@ -1,4 +1,3 @@
-"""Least Squares Support Vector Regression."""
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import rbf_kernel
@@ -8,9 +7,35 @@ from scipy.sparse import linalg
 
 
 class LSSVR(BaseEstimator, RegressorMixin):
-    def __init__(self, C=2, kernel='linear', gamma=None):
-        self.supportVectors      = None
-        self.supportVectorLabels = None
+    """Least Squares Support Vector Regression.
+    
+    Parameters
+    ----------
+    C : float, default=2.0
+        Regularization parameter. The strength of the regularization is
+        inversely proportional to C. Must be strictly positive.
+
+    kernel : {'linear', 'rbf'}, default='linear'
+        Specifies the kernel type to be used in the algorithm.
+        It must be 'linear', 'rbf' or a callable.
+
+    gamma : float, default = None
+        Kernel coefficient for 'rbf'
+
+
+    Attributes
+    ----------
+    support_: boolean np.array of shape (n_samples,), default = None
+        Array for support vector selection.
+    
+    alpha_ : array-like
+        Weight matrix
+
+    bias_ : array-like
+        Bias vector
+
+
+    """
         self.C = C
         self.gamma = gamma
         self.kernel= kernel
@@ -19,21 +44,23 @@ class LSSVR(BaseEstimator, RegressorMixin):
         self.bias = None 
         self.alphas = None
 
-    def set_params(self, **parameters):
-        for parameter, value in parameters.items():
-            setattr(self, parameter, value)
-        return self
+        """Fit the model according to the given training data.
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Training data
 
-    def fit(self, x_train, y_train):
-        # self.idxs can be used to select points as support vectors,
-        # so you need another algorithm or criteria to choose them
-        if type(self.idxs) == type(None):
-            self.idxs=np.ones(x_train.shape[0], dtype=bool)
+        y : array-like of shape (n_samples,) or (n_samples, n_targets)
+            Target values.
 
-        self.supportVectors      = x_train[self.idxs, :]
-        self.supportVectorLabels = y_train[self.idxs]
+        support : boolean np.array of shape (n_samples,), default = None
+            Array for support vector selection.
 
-        K = self.kernel_func(self.kernel, x_train, self.supportVectors, self.gamma)
+        Returns
+        -------
+        self : object
+            An instance of the estimator.
+        """
 
         self.K = K
         OMEGA = K
@@ -64,6 +91,18 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         return self
 
+        """
+        Predict using the estimator.
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape (n_samples, n_features)
+            Samples.
+
+        Returns
+        -------
+        y : array-like of shape (n_samples,) or (n_samples, n_targets)
+            Returns predicted values.
+        """
     def kernel_func(self, u, v):
         if self.kernel is 'linear':
             return np.dot(u, v.T)
