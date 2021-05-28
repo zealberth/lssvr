@@ -8,7 +8,7 @@ from scipy.sparse.linalg import lsmr
 
 class LSSVR(BaseEstimator, RegressorMixin):
     """Least Squares Support Vector Regression.
-    
+
     Parameters
     ----------
     C : float, default=2.0
@@ -27,7 +27,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
     ----------
     support_: boolean np.array of shape (n_samples,), default = None
         Array for support vector selection.
-    
+
     alpha_ : array-like
         Weight matrix
 
@@ -54,7 +54,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         support : boolean np.array of shape (n_samples,), default = None
             Array for support vector selection.
-    
+
         Returns
         -------
         self : object
@@ -63,24 +63,23 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         X, y = check_X_y(X, y, dtype='float')
 
-
         if not support:
             self.support_ = np.ones(X.shape[0], dtype=bool)
         else:
-          self.support_ = check_array(support, ensure_2d=False, dtype='bool')
+            self.support_ = check_array(support, ensure_2d=False, dtype='bool')
 
         self.support_vectors_ = X[self.support_, :]
         support_labels = y[self.support_]
-        
-        self.K_ = self.kernel_func(X, self.support_vectors_) 
+
+        self.K_ = self.kernel_func(X, self.support_vectors_)
         omega = self.K_.copy()
         omega += np.diag(self.support_*1/self.C)
 
         D = np.empty(np.array(omega.shape) + 1)
 
-        D[1:,1:] = omega
+        D[1:, 1:] = omega
         D[0, 1:] = 1
-        D[1:,0 ] = 1
+        D[1:, 0] = 1
 
         shape = np.array(support_labels.shape)
         shape[0] += 1
@@ -88,14 +87,14 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         t[0] = 0
         t[1:] = support_labels
-    
+
         # TODO: maybe give access to  lsmr atol and btol ?
         try:
             z = lsmr(D.T, t)[0]
         except:
             z = np.linalg.pinv(D).T @ t
 
-        self.bias_  = z[0]
+        self.bias_ = z[0]
         self.alpha_ = z[1:]
         self.alpha_ = self.alpha_[self.support_]
 
@@ -114,7 +113,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         y : array-like of shape (n_samples,) or (n_samples, n_targets)
             Returns predicted values.
         """
-        
+
         if not hasattr(self, 'support_vectors_'):
             raise NotFittedError
 
@@ -123,20 +122,20 @@ class LSSVR(BaseEstimator, RegressorMixin):
         return (K @ self.alpha_) + self.bias_
 
     def kernel_func(self, u, v):
-        if self.kernel is 'linear':
+        if self.kernel == 'linear':
             return np.dot(u, v.T)
 
-        elif self.kernel is 'rbf':
+        elif self.kernel == 'rbf':
             return rbf_kernel(u, v, gamma=self.gamma)
-            
+
         elif callable(self.kernel):
             if hasattr(self.kernel, 'gamma'):
                 return self.kernel(u, v, gamma=self.gamma)
             else:
                 return self.kernel(u, v)
         else:
-          # default to linear
-          return np.dot(u, v.T)
+            # default to linear
+            return np.dot(u, v.T)
 
     def score(self, X, y):
         from scipy.stats import pearsonr
@@ -144,7 +143,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         return p ** 2
 
     def norm_weights(self):
-        A = self.alpha_.reshape(-1,1) @ self.alpha_.reshape(-1,1).T
+        A = self.alpha_.reshape(-1, 1) @ self.alpha_.reshape(-1, 1).T
 
-        W = A @ self.K_[self.support_,:]
+        W = A @ self.K_[self.support_, :]
         return np.sqrt(np.sum(np.diag(W)))
