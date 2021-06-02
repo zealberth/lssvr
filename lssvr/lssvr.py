@@ -73,7 +73,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
 
         self.K_ = self.kernel_func(X, self.support_vectors_)
         omega = self.K_.copy()
-        omega += np.diag(self.support_*1/self.C)
+        np.fill_diagonal(omega, omega.diagonal()+self.support_/self.C)
 
         D = np.empty(np.array(omega.shape) + 1)
 
