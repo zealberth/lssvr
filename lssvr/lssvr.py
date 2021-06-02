@@ -61,7 +61,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
             An instance of the estimator.
         """
 
-        X, y = check_X_y(X, y, dtype='float')
+        X, y = check_X_y(X, y, multi_output=True, dtype='float')
 
         if not support:
             self.support_ = np.ones(X.shape[0], dtype=bool)
@@ -118,7 +118,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         if not hasattr(self, 'support_vectors_'):
             raise NotFittedError
 
-        X = check_array(X)
+        X = check_array(X, ensure_2d=False)
         K = self.kernel_func(X, self.support_vectors_)
         return (K @ self.alpha_) + self.bias_
 
