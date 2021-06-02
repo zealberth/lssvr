@@ -78,6 +78,7 @@ class LSSVR(BaseEstimator, RegressorMixin):
         D = np.empty(np.array(omega.shape) + 1)
 
         D[1:, 1:] = omega
+        D[0, 0] = 0
         D[0, 1:] = 1
         D[1:, 0] = 1
 
