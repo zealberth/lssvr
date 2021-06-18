@@ -1,92 +1,150 @@
-"""Least Squares Support Vector Regression."""
 import numpy as np
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics.pairwise import rbf_kernel
-from sklearn.gaussian_process import kernels
-from sklearn.neighbors import NearestNeighbors, KNeighborsRegressor
-from scipy.sparse import linalg
+from sklearn.utils import check_X_y, check_array
+from sklearn.exceptions import NotFittedError
+from scipy.sparse.linalg import lsmr
 
 
 class LSSVR(BaseEstimator, RegressorMixin):
-    def __init__(self, C=2, kernel='linear', gamma=None):
-        self.supportVectors      = None
-        self.supportVectorLabels = None
+    """Least Squares Support Vector Regression.
+
+    Parameters
+    ----------
+    C : float, default=2.0
+        Regularization parameter. The strength of the regularization is
+        inversely proportional to C. Must be strictly positive.
+
+    kernel : {'linear', 'rbf'}, default='linear'
+        Specifies the kernel type to be used in the algorithm.
+        It must be 'linear', 'rbf' or a callable.
+
+    gamma : float, default = None
+        Kernel coefficient for 'rbf'
+
+
+    Attributes
+    ----------
+    support_: boolean np.array of shape (n_samples,), default = None
+        Array for support vector selection.
+
+    alpha_ : array-like
+        Weight matrix
+
+    bias_ : array-like
+        Bias vector
+
+
+    """
+
+    def __init__(self, C=2.0, kernel='linear', gamma=None):
         self.C = C
+        self.kernel = kernel
         self.gamma = gamma
-        self.kernel= kernel
-        self.idxs  = None
-        self.K = None
-        self.bias = None 
-        self.alphas = None
 
-    def set_params(self, **parameters):
-        for parameter, value in parameters.items():
-            setattr(self, parameter, value)
-        return self
+    def fit(self, X, y, support=None):
+        """Fit the model according to the given training data.
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Training data
 
-    def fit(self, x_train, y_train):
-        # self.idxs can be used to select points as support vectors,
-        # so you need another algorithm or criteria to choose them
-        if type(self.idxs) == type(None):
-            self.idxs=np.ones(x_train.shape[0], dtype=bool)
+        y : array-like of shape (n_samples,) or (n_samples, n_targets)
+            Target values.
 
-        self.supportVectors      = x_train[self.idxs, :]
-        self.supportVectorLabels = y_train[self.idxs]
+        support : boolean np.array of shape (n_samples,), default = None
+            Array for support vector selection.
 
-        K = self.kernel_func(self.kernel, x_train, self.supportVectors, self.gamma)
+        Returns
+        -------
+        self : object
+            An instance of the estimator.
+        """
 
-        self.K = K
-        OMEGA = K
-        OMEGA[self.idxs, np.arange(OMEGA.shape[1])] += 1/self.C
+        X, y = check_X_y(X, y, multi_output=True, dtype='float')
 
-        D = np.zeros(np.array(OMEGA.shape) + 1)
+        if not support:
+            self.support_ = np.ones(X.shape[0], dtype=bool)
+        else:
+            self.support_ = check_array(support, ensure_2d=False, dtype='bool')
 
-        D[1:,1:] = OMEGA
-        D[0, 1:] += 1
-        D[1:,0 ] += 1
+        self.support_vectors_ = X[self.support_, :]
+        support_labels = y[self.support_]
 
-        shape = np.array(self.supportVectorLabels.shape)
-        shape[0] +=1
+        self.K_ = self.kernel_func(X, self.support_vectors_)
+        omega = self.K_.copy()
+        np.fill_diagonal(omega, omega.diagonal()+self.support_/self.C)
 
-        t = np.zeros(shape)
-        
-        t[1:] = self.supportVectorLabels
-    
-        # sometimes this function breaks
+        D = np.empty(np.array(omega.shape) + 1)
+
+        D[1:, 1:] = omega
+        D[0, 0] = 0
+        D[0, 1:] = 1
+        D[1:, 0] = 1
+
+        shape = np.array(support_labels.shape)
+        shape[0] += 1
+        t = np.empty(shape)
+
+        t[0] = 0
+        t[1:] = support_labels
+
+        # TODO: maybe give access to  lsmr atol and btol ?
         try:
-            z = linalg.lsmr(D.T, t)[0]
+            z = lsmr(D.T, t)[0]
         except:
             z = np.linalg.pinv(D).T @ t
 
-        self.bias   = z[0]
-        self.alphas = z[1:]
-        self.alphas = self.alphas[self.idxs]
+        self.bias_ = z[0]
+        self.alpha_ = z[1:]
+        self.alpha_ = self.alpha_[self.support_]
 
         return self
 
-    def predict(self, x_test):
-        K = self.kernel_func(self.kernel, x_test, self.supportVectors, self.gamma)
+    def predict(self, X):
+        """
+        Predict using the estimator.
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape (n_samples, n_features)
+            Samples.
 
-        return (K @ self.alphas) + self.bias
-        # return np.sum(K * (np.tile(self.alphas, (K.shape[0], 1))), axis=1) + self.bias
+        Returns
+        -------
+        y : array-like of shape (n_samples,) or (n_samples, n_targets)
+            Returns predicted values.
+        """
 
-    def kernel_func(self, kernel, u, v, gamma):
-        if kernel == 'linear':
-            k = np.dot(u, v.T)
-        if kernel == 'rbf':
-            k = rbf_kernel(u, v, gamma=gamma)
-        return k
+        if not hasattr(self, 'support_vectors_'):
+            raise NotFittedError
 
-    def score(self, X, y, sample_weight=None):
+        X = check_array(X, ensure_2d=False)
+        K = self.kernel_func(X, self.support_vectors_)
+        return (K @ self.alpha_) + self.bias_
+
+    def kernel_func(self, u, v):
+        if self.kernel == 'linear':
+            return np.dot(u, v.T)
+
+        elif self.kernel == 'rbf':
+            return rbf_kernel(u, v, gamma=self.gamma)
+
+        elif callable(self.kernel):
+            if hasattr(self.kernel, 'gamma'):
+                return self.kernel(u, v, gamma=self.gamma)
+            else:
+                return self.kernel(u, v)
+        else:
+            # default to linear
+            return np.dot(u, v.T)
+
+    def score(self, X, y):
         from scipy.stats import pearsonr
         p, _ = pearsonr(y, self.predict(X))
         return p ** 2
 
     def norm_weights(self):
-        n = len(self.supportVectors)
+        A = self.alpha_.reshape(-1, 1) @ self.alpha_.reshape(-1, 1).T
 
-        A = self.alphas.reshape(-1,1) @ self.alphas.reshape(-1,1).T
-
-        W = A @ self.K[self.idxs,:]
+        W = A @ self.K_[self.support_, :]
         return np.sqrt(np.sum(np.diag(W)))
-    
